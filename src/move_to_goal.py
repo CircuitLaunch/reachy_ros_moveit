@@ -92,15 +92,11 @@ class MoveToGoal:
             a = math.degrees(half_a * 2.0)
         return x, y, z, a
 
-    def _handleCallback(self, msg):
-        side = msg.side
-        x = msg.pos_x
-        y = msg.pos_y
-        z = msg.pos_z
-        qx = msg.ori_x
-        qy = msg.ori_y
-        qz = msg.ori_z
-        qw = msg.ori_w
+    def _orientationToQuaternion(self, ox: float, oy: float, oz: float, oa: float):
+        qx = ox
+        qy = oy
+        qz = oz
+        qw = oa
         mag = math.sqrt(qx * qx + qy * qy + qz * qz)
         half_a = math.radians(qw) * 0.5
         factor = math.sin(half_a) / mag
@@ -108,6 +104,14 @@ class MoveToGoal:
         qy *= factor
         qz *= factor
         qw = math.cos(half_a)
+        return qx, qy, qz, qw
+
+    def _handleCallback(self, msg):
+        side = msg.side
+        x = msg.pos_x
+        y = msg.pos_y
+        z = msg.pos_z
+        qx, qy, qz, qw = self._orientationToQuaternion(msg.ori_x, msg.ori_y, msg.ori_z, msg.ori_w)
         rospy.loginfo("\nRecieved command to move %s arm to new pose\n%s\n" % (side, msg))
         self._moveToGoal(side, x, y, z, qx, qy, qz, qw)
 
@@ -119,10 +123,10 @@ class MoveToGoal:
         poseGoal.pose.position.x = x
         poseGoal.pose.position.y = y
         poseGoal.pose.position.z = z
-        poseGoal.pose.orientation.x = qx;
-        poseGoal.pose.orientation.y = qy;
-        poseGoal.pose.orientation.z = qz;
-        poseGoal.pose.orientation.w = qw;
+        poseGoal.pose.orientation.x = qx
+        poseGoal.pose.orientation.y = qy
+        poseGoal.pose.orientation.z = qz
+        poseGoal.pose.orientation.w = qw
 
         if side == 'right':
             poseGoal.header.frame_id = self.rightPlanningFrame
