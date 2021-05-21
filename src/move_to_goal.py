@@ -10,8 +10,9 @@ import moveit_msgs.msg
 import geometry_msgs.msg
 from math import pi
 from std_msgs.msg import String
+from tf.transformations import *
 #from moveit_commander.conversations import pose_to_list
-from reachy_ros_moveit.msg import move_to_goal
+from reachy_ros_moveit.msg import move_to_goal_axis_angle, move_to_goal_euler
 
 class MoveToGoal:
 
@@ -52,68 +53,63 @@ class MoveToGoal:
         r_py = rightArmCurrentPose.pose.position.y
         r_pz = rightArmCurrentPose.pose.position.z
 
-        r_ox, r_oy, r_oz, r_oa = self._quaternionToOrientation(
+        rightEulerAngles = euler_from_quaternion([
             rightArmCurrentPose.pose.orientation.x,
             rightArmCurrentPose.pose.orientation.y,
             rightArmCurrentPose.pose.orientation.z,
-            rightArmCurrentPose.pose.orientation.w
-        )
+            rightArmCurrentPose.pose.orientation.w])
+        r_ex = math.degrees(rightEulerAngles[0])
+        r_ey = math.degrees(rightEulerAngles[1])
+        r_ez = math.degrees(rightEulerAngles[2])
 
         l_px = leftArmCurrentPose.pose.position.x
         l_py = leftArmCurrentPose.pose.position.y
         l_pz = leftArmCurrentPose.pose.position.z
 
-        l_ox, l_oy, l_oz, l_oa = self._quaternionToOrientation(
+        leftEulerAngles = euler_from_quaternion([
             leftArmCurrentPose.pose.orientation.x,
             leftArmCurrentPose.pose.orientation.y,
             leftArmCurrentPose.pose.orientation.z,
-            leftArmCurrentPose.pose.orientation.w
-        )
+            leftArmCurrentPose.pose.orientation.w])
+        l_ex = math.degrees(leftEulerAngles[0])
+        l_ey = math.degrees(leftEulerAngles[1])
+        l_ez = math.degrees(leftEulerAngles[2])
 
-        rospy.loginfo("\nCurrent right arm pose: pos(%f, %f, %f), ori(%f, %f, %f, %f)\n" % (r_px, r_py, r_pz, r_ox, r_oy, r_oz, r_oa))
-        rospy.loginfo("\nCurrent left arm pose: pos(%f, %f, %f), ori(%f, %f, %f, %f)\n" % (l_px, l_py, l_pz, l_ox, l_oy, l_oz, l_oa))
+        rospy.loginfo("\nCurrent right arm pose: pos(%f, %f, %f), euler(%f, %f, %f, 'sxyz')\n" % (r_px, r_py, r_pz, r_ex, r_ey, r_ez))
+        rospy.loginfo("\nCurrent left arm pose: pos(%f, %f, %f), euler(%f, %f, %f, 'sxyz')\n" % (l_px, l_py, l_pz, l_ex, l_ey, l_ez))
 
-        rospy.Subscriber("move_to_goal_topic", move_to_goal, self._handleCallback)
+        rospy.Subscriber("move_to_goal_topic/axis_angle", move_to_goal_axis_angle, self._handleCallbackAxisAngle)
+        rospy.Subscriber("move_to_goal_topic/euler", move_to_goal_euler, self._handleCallbackEuler)
 
         rospy.spin()
 
-    def _quaternionToOrientation(self, qx: float, qy: float, qz: float, qw: float):
-        if qw == 1.0:
-            x = 1
-            y = 0
-            z = 0
-            a = 0
-        else:
-            half_a = math.acos(qw)
-            factor = 1.0 / math.sin(half_a)
-            x = qx * factor
-            y = qy * factor
-            z = qz * factor
-            a = math.degrees(half_a * 2.0)
-        return x, y, z, a
-
-    def _orientationToQuaternion(self, ox: float, oy: float, oz: float, oa: float):
-        qx = ox
-        qy = oy
-        qz = oz
-        qw = oa
-        mag = math.sqrt(qx * qx + qy * qy + qz * qz)
-        half_a = math.radians(qw) * 0.5
-        factor = math.sin(half_a) / mag
-        qx *= factor
-        qy *= factor
-        qz *= factor
-        qw = math.cos(half_a)
-        return qx, qy, qz, qw
-
-    def _handleCallback(self, msg):
+    def _handleCallbackAxisAngle(self, msg):
         side = msg.side
         x = msg.pos_x
         y = msg.pos_y
         z = msg.pos_z
-        qx, qy, qz, qw = self._orientationToQuaternion(msg.ori_x, msg.ori_y, msg.ori_z, msg.ori_w)
+        ax = msg.axis_x
+        ay = msg.axis_y
+        az = msg.axis_z
+        a = msg.angle
+        q = quaternion_about_axis(math.radians(a), (ax, ay, az))
+
         rospy.loginfo("\nRecieved command to move %s arm to new pose\n%s\n" % (side, msg))
-        self._moveToGoal(side, x, y, z, qx, qy, qz, qw)
+        self._moveToGoal(side, x, y, z, q[0], q[1], q[2], q[3])
+
+    def _handleCallbackEuler(self, msg):
+        side = msg.side
+        x = msg.pos_x
+        y = msg.pos_y
+        z = msg.pos_z
+        ex = msg.euler_x
+        ey = msg.euler_y
+        ez = msg.euler_z
+        axes = msg.order
+        q = quaternion_from_euler(math.radians(ex), math.radians(ey), math.radians(ez), f's{axes}')
+
+        rospy.loginfo("\nRecieved command to move %s arm to new pose\n%s\n" % (side, msg))
+        self._moveToGoal(side, x, y, z, q[0], q[1], q[2], q[3])
 
     def _moveToGoal(self, side: String, x: float, y: float, z: float, qx: float, qy: float, qz: float, qw: float):
         poseGoal = geometry_msgs.msg.PoseStamped()
